@@ -376,6 +376,7 @@
     else if(type==="tease"){ bell(392,t,0.16,0.11,sfxGain,"triangle"); bell(311,t+0.13,0.24,0.1,sfxGain,"triangle"); }
     else if(type==="bouquet"){ [0,4,7,11].forEach(function(iv,i){ bell(mtof(67+iv),t+i*0.09,0.5,0.12,sfxGain,"sine"); }); }
     else if(type==="kiss"){ [0,7,12,16,19,24].forEach(function(iv,i){ bell(mtof(72+iv),t+i*0.07,0.55,0.13,sfxGain,"sine"); }); }
+    else if(type==="bark"){ bell(520,t,0.07,0.1,sfxGain,"square"); bell(700,t+0.06,0.09,0.08,sfxGain,"square"); }
   }
   function toggleSound(){
     soundOn=!soundOn;
@@ -610,6 +611,31 @@
     disc(g,9,3,2,C.petal);  px1(g,9,3,C.center);  px1(g,11,3,C.petalSh); px1(g,9,1,C.petalSh);
     disc(g,6,5,2,C.petal);  px1(g,6,5,C.center);  px1(g,6,7,C.petalSh);
   })();
+  /* Chino: black & white Pomeranian (facing right) */
+  var dogCan = mkCan(18,16), dogCtx = dogCan.getContext("2d");
+  function renderDog(walk){
+    var g=dogCtx; g.clearRect(0,0,18,16);
+    var W="#f4f0e7", WS="#d8d1c2", K="#282430", NS="#3a2c30";
+    var a=(walk!=null)?(Math.sin(walk)>0?1:0):0;
+    /* tail: fluffy curl, black base */
+    disc(g,3,6,2,W); g.fillStyle=W; g.fillRect(1,4,3,4); g.fillStyle=K; g.fillRect(1,4,2,2);
+    /* legs (alternate) */
+    g.fillStyle=W; g.fillRect(4,12,2,3-a); g.fillRect(13,12,2,3-a); g.fillRect(7,12,2,2+a); g.fillRect(10,12,2,2+a);
+    g.fillStyle=WS; g.fillRect(4,14,2,1); g.fillRect(13,14,2,1);
+    /* fluffy body + bumpy back */
+    disc(g,8,9,5,W); g.fillStyle=W; g.fillRect(4,6,10,6); g.fillRect(5,5,2,1); g.fillRect(8,4,2,1); g.fillRect(11,5,2,1);
+    /* black saddle patch */
+    g.fillStyle=K; g.fillRect(5,5,7,4); g.fillRect(6,4,4,1); g.fillRect(4,7,2,2);
+    /* head (white) + ears (black) */
+    disc(g,13,7,4,W); g.fillStyle=W; g.fillRect(11,5,6,6);
+    g.fillStyle=K; g.fillRect(10,2,2,3); g.fillRect(11,1,1,2); g.fillRect(15,2,2,3); g.fillRect(15,1,1,2);
+    /* face */
+    g.fillStyle=K; g.fillRect(13,6,1,1);
+    g.fillStyle=NS; g.fillRect(16,7,1,2);
+    g.fillStyle=W; g.fillRect(13,8,3,2);
+    g.fillStyle=NS; g.fillRect(16,8,1,1);
+    g.fillStyle="#f2889a"; g.fillRect(14,10,1,1);
+  }
 
   /* -------- Projection -------- */
   var camX = 40;
@@ -628,10 +654,28 @@
   /* cutscene */
   var cutT = 0, cutAnchor = null, cutArrived = false, bouquetOwner = null, kissStarted = false, kissActive = false;
   var CUT_TX = KAIX - 22, CUT_TZ = KAIZ - 2;
+  /* Chino the Pomeranian */
+  var chino = { x:220, z:135, tx:220, tz:135, vx:0, facing:1, walk:0, pauseT:0.8 }, chinoBarkCd = 0;
+  function updateChino(dt){
+    chinoBarkCd -= dt;
+    if(chino.pauseT>0){ chino.pauseT-=dt; chino.walk=0; chino.vx=0; }
+    else {
+      var dx=chino.tx-chino.x, dz=chino.tz-chino.z, d=Math.sqrt(dx*dx+dz*dz);
+      if(d<3){
+        chino.pauseT=0.5+Math.random()*2.2; chino.walk=0; chino.vx=0;
+        if(Math.random()<0.4){ chino.tx=avatarX+(Math.random()*70-35); chino.tz=avatarZ+(Math.random()*40-20); }
+        else { chino.tx=70+Math.random()*(WORLDW-140); chino.tz=MINZ+10+Math.random()*(MAXZ-MINZ-20); }
+        chino.tx=Math.max(30,Math.min(WORLDW-30,chino.tx)); chino.tz=Math.max(MINZ,Math.min(MAXZ,chino.tz));
+      } else {
+        var sp=36; chino.vx=dx/d; chino.x+=dx/d*sp*dt; chino.z+=dz/d*sp*dt; chino.walk+=dt*16; chino.facing=dx>=0?1:-1;
+      }
+    }
+    if(chinoBarkCd<=0 && Math.abs(chino.x-avatarX)<22 && Math.abs(chino.z-avatarZ)<18){ sfx("bark"); chinoBarkCd=3+Math.random()*3; }
+  }
 
   var NOTES = 6;
   var stations = [
-    {x:60,   z:100, title:"The beach is yours", text:"Roam anywhere you like, my love. Walk toward the sunset, wander the shore. I've hidden six glowing notes across this beach. Find them all, then come find me.", shown:true, intro:true},
+    {x:60,   z:100, title:"The beach is yours", text:"Roam anywhere you like, my love. Walk toward the sunset, wander the shore. I've hidden six glowing notes across this beach. Find them all, then come find me. Oh, and say hi to Chino, he's around here somewhere.", shown:true, intro:true},
     {x:300,  z:70,  title:"The way you love music", text:"You don't just hear a song, you live inside it. Your late-night playlists, the way a chorus makes you close your eyes. I fell for all of it.", shown:false},
     {x:520,  z:160, title:"That dangerous mind", text:"The smartest person in every room, and you make it look effortless. Watching you think is honestly my favourite show.", shown:false},
     {x:760,  z:65,  title:"Yes, even the sharp tongue", text:"You can be a little mean, and heaven help me, I adore it. I'd take your teasing over anyone else's sweetness.", shown:false},
@@ -845,6 +889,14 @@
         ctx.drawImage(bqCan,Math.round(ox-6*p.k),Math.round(p.y-19*p.k)+oy,Math.round(12*p.k),Math.round(14*p.k));
       }
     }});
+    bills.push({z:chino.z, d:function(){
+      var p=proj(chino.x,chino.z); if(p.x<-16||p.x>VW+16) return;
+      renderDog((chino.pauseT<=0 && chino.vx!==0) ? chino.walk : null);
+      ctx.drawImage(shadCan, Math.round(p.x-7*p.k), Math.round(p.y-1), Math.round(14*p.k), Math.max(1,Math.round(3*p.k)));
+      var dw=Math.round(18*p.k), dh=Math.round(16*p.k);
+      if(chino.facing<0){ ctx.save(); ctx.translate(Math.round(p.x),0); ctx.scale(-1,1); ctx.drawImage(dogCan, Math.round(-9*p.k), Math.round(p.y-dh), dw, dh); ctx.restore(); }
+      else { ctx.drawImage(dogCan, Math.round(p.x-9*p.k), Math.round(p.y-dh), dw, dh); }
+    }});
     bills.sort(function(a,b){ return b.z-a.z; });
     for(i=0;i<bills.length;i++) bills[i].d();
 
@@ -944,6 +996,7 @@
       camX += (((avatarX+KAIX)/2 - 8)-camX)*Math.min(1,dt*3);
     }
 
+    if((state==="play" && !paused) || state==="cutscene") updateChino(dt);
     for(var fk=0;fk<footprints.length;fk++) footprints[fk].age+=dt;
     for(var k=sparks.length-1;k>=0;k--){ sparks[k].life-=dt; sparks[k].h+=dt*14; if(sparks[k].life<=0) sparks.splice(k,1); }
     if(!reduce){
@@ -1001,6 +1054,7 @@
     count=0; document.getElementById("count").textContent="0";
     avatarX=40; avatarZ=100; camX=40; lastStepX=40; lastStepZ=100; sparks=[]; winHearts=[]; footprints=[]; kaiTeased=false;
     cutT=0; cutAnchor=null; cutArrived=false; bouquetOwner=null; kissStarted=false; kissActive=false;
+    chino.x=220; chino.z=135; chino.tx=220; chino.tz=135; chino.pauseT=0.8; chino.facing=1; chinoBarkCd=0;
     document.getElementById("frame").classList.remove("cine");
     updateHud();
     startPlay(true);
@@ -1048,6 +1102,7 @@
     chibi(g,48,55,kai,null,t);
     chibi(g,68,55,avatar,null,t+1.7);
     g.fillStyle=avatar.skin; g.fillRect(56,49,4,2);
+    renderDog(reduce?null:t*3); g.drawImage(dogCan, 80, 44, 15, 13);
     var hy=6+(reduce?0:Math.round(Math.sin(t*2)));
     tHeart(g,54,hy+1,"#e2506f"); tHeart(g,54,hy,"#ff6a8a");
     /* a drifting petal or two */
@@ -1067,7 +1122,6 @@
   function pill(row,label,active,onpick){ var b=document.createElement("button"); b.type="button"; b.className="tbtn2"+(active?" active":""); b.textContent=label; b.addEventListener("click",function(){ sfx("tick"); for(var i=0;i<row.children.length;i++) row.children[i].classList.remove("active"); b.classList.add("active"); onpick(); }); row.appendChild(b); }
 
   (function buildUI(){
-    var r1=group("Skin"); skins.forEach(function(s,i){ swatch(r1,s[0], i===0, function(){ avatar.skin=s[0]; avatar.skinSh=s[1]; }); });
     var r2=group("Hair colour"); hairs.forEach(function(h,i){ swatch(r2,h, i===0, function(){ avatar.hair=h; }); });
     var r3=group("Hairstyle"); var names=["Bangs","Straight","Ponytail"]; styles.forEach(function(st,i){ pill(r3,names[i], i===0, function(){ avatar.hairStyle=st; }); });
     var r4=group("Glasses"); pill(r4,"On",true,function(){ avatar.glasses=true; }); pill(r4,"Off",false,function(){ avatar.glasses=false; });
@@ -1131,6 +1185,7 @@
     start:function(){ startPlay(false); }, step:function(dt){ update(dt); render(); },
     titleDraw:function(){ drawTitleHero(); }, pressStart:function(){ document.getElementById("startGame").click(); },
     audio:function(){ return { ctx: ac?ac.state:null, soundOn:soundOn, musicStarted:musicStarted }; }, sfxTest:function(n){ sfx(n); },
+    chino:function(){ return { x:Math.round(chino.x), z:Math.round(chino.z), facing:chino.facing, paused:chino.pauseT>0 }; },
     setDir:function(dx,dz){ testDX=dx; testDZ=dz; }, resume:closeDialogue,
     warp:function(x,z){ avatarX=x; avatarZ=z; camX=x; },
     state:function(){ return { state:state, x:Math.round(avatarX), z:Math.round(avatarZ), count:count, notes:notesFound(), paused:paused, shown:stations.map(function(s){return s.shown;}), dlgTitle:document.getElementById("dlgTitle").textContent, dlgHidden:dlg.classList.contains("hidden"), winHidden:document.getElementById("win").classList.contains("hidden"), cut:{arrived:cutArrived, owner:bouquetOwner, kissed:kissStarted, kissing:kissActive, cine:document.getElementById("frame").classList.contains("cine")} }; }

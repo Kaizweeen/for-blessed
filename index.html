@@ -176,6 +176,17 @@
   }
   #hint.fade { opacity: 0; }
 
+  #soundBtn {
+    position: absolute; top: 14px; right: 14px; z-index: 7;
+    width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
+    background: rgba(16,24,40,0.7); border: 1px solid rgba(255,255,255,0.16); color: #fff;
+    font-size: 18px; display: grid; place-items: center; line-height: 1;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 10px 26px -12px rgba(0,0,0,0.7); transition: transform 0.15s ease, background 0.15s ease;
+  }
+  #soundBtn:hover { background: rgba(16,24,40,0.92); transform: translateY(-1px); }
+  #soundBtn:active { transform: scale(0.92); }
+
   #dialogue { align-items: end; padding-bottom: 30px; }
   #dialogue .panel { max-width: 580px; text-align: left; padding: 20px 22px; }
   .dlg-head { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
@@ -217,6 +228,8 @@
 
 <div class="game">
   <span class="amb a1"></span><span class="amb a2"></span><span class="amb a3"></span><span class="amb a4"></span>
+
+  <button id="soundBtn" aria-label="Mute sound">🔊</button>
 
   <div id="stage">
     <div id="frame">
@@ -306,6 +319,69 @@
 (function () {
   "use strict";
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ================= Audio: cozy music + SFX (Web Audio, self-contained) ================= */
+  var ac=null, master=null, musicGain=null, sfxGain=null, warmth=null;
+  var soundOn=true, musicStarted=false, aStep=0, aNext=0, schedTimer=null;
+  var BPM=74, SPB=60/BPM, EI=(60/74)/2;
+  function mtof(m){ return 440*Math.pow(2,(m-69)/12); }
+  var prog=[[60,64,67,71],[57,60,64,67],[53,57,60,64],[55,59,62,65]]; /* Cmaj7 Am7 Fmaj7 G7 */
+  var bassN=[36,33,29,31];
+  var arpPat=[0,1,2,3,2,1,3,2];
+  function initAudio(){
+    try{
+      if(!ac){
+        var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+        ac=new AC();
+        master=ac.createGain(); master.gain.value=soundOn?0.85:0.0; master.connect(ac.destination);
+        warmth=ac.createBiquadFilter(); warmth.type="lowpass"; warmth.frequency.value=2300; warmth.Q.value=0.4; warmth.connect(master);
+        musicGain=ac.createGain(); musicGain.gain.value=0.0001; musicGain.connect(warmth);
+        sfxGain=ac.createGain(); sfxGain.gain.value=0.9; sfxGain.connect(master);
+      }
+      if(ac.state==="suspended") ac.resume();
+      if(!musicStarted){
+        musicStarted=true;
+        musicGain.gain.setValueAtTime(0.0001, ac.currentTime);
+        musicGain.gain.linearRampToValueAtTime(0.12, ac.currentTime+3.5);
+        aNext=ac.currentTime+0.16; aStep=0;
+        schedTimer=setInterval(scheduler,25);
+      }
+    }catch(e){}
+  }
+  function scheduler(){
+    if(!ac) return;
+    while(aNext < ac.currentTime+0.2){
+      var s=aStep%32, bar=(s/8)|0, b=s%8, ch=prog[bar];
+      if(b===0){ for(var i=0;i<ch.length;i++) padTone(mtof(ch[i]),aNext,SPB*4,0.028); bassTone(mtof(bassN[bar]),aNext,SPB*4); }
+      var idx=arpPat[b]%ch.length; bell(mtof(ch[idx]+12),aNext,EI*1.6,0.085,musicGain,"sine");
+      if(b===4) bell(mtof(ch[(idx+2)%ch.length]+12),aNext,EI*1.4,0.045,musicGain,"sine");
+      aNext+=EI; aStep++;
+    }
+  }
+  function padTone(f,t,dur,pk){ if(!ac)return; var o=ac.createOscillator(),g=ac.createGain(); o.type="triangle"; o.frequency.value=f;
+    g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(pk,t+0.7); g.gain.setValueAtTime(pk,t+dur-0.9); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(musicGain); o.start(t); o.stop(t+dur+0.05); }
+  function bassTone(f,t,dur){ if(!ac)return; var o=ac.createOscillator(),g=ac.createGain(); o.type="sine"; o.frequency.value=f;
+    g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.09,t+0.09); g.gain.exponentialRampToValueAtTime(0.0001,t+dur*0.92);
+    o.connect(g); g.connect(musicGain); o.start(t); o.stop(t+dur); }
+  function bell(f,t,dur,pk,dest,type){ if(!ac)return; var o=ac.createOscillator(),g=ac.createGain(); o.type=type||"sine"; o.frequency.value=f;
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(pk,t+0.006); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(dest||sfxGain); o.start(t); o.stop(t+dur+0.03); }
+  function sfx(type){
+    if(!ac||!soundOn) return; var t=ac.currentTime;
+    if(type==="tick"){ bell(660,t,0.05,0.05,sfxGain,"triangle"); }
+    else if(type==="click"){ bell(523,t,0.12,0.12,sfxGain,"triangle"); bell(784,t+0.03,0.14,0.07,sfxGain,"sine"); }
+    else if(type==="coin"){ bell(880,t,0.13,0.14,sfxGain,"sine"); bell(1319,t+0.05,0.18,0.11,sfxGain,"sine"); }
+    else if(type==="note"){ [0,4,7].forEach(function(iv,i){ bell(mtof(72+iv),t+i*0.09,0.42,0.13,sfxGain,"sine"); }); }
+    else if(type==="tease"){ bell(392,t,0.16,0.11,sfxGain,"triangle"); bell(311,t+0.13,0.24,0.1,sfxGain,"triangle"); }
+    else if(type==="bouquet"){ [0,4,7,11].forEach(function(iv,i){ bell(mtof(67+iv),t+i*0.09,0.5,0.12,sfxGain,"sine"); }); }
+    else if(type==="kiss"){ [0,7,12,16,19,24].forEach(function(iv,i){ bell(mtof(72+iv),t+i*0.07,0.55,0.13,sfxGain,"sine"); }); }
+  }
+  function toggleSound(){
+    soundOn=!soundOn;
+    if(ac&&master) master.gain.setTargetAtTime(soundOn?0.85:0.0, ac.currentTime, 0.03);
+    var b=document.getElementById("soundBtn"); if(b){ b.textContent=soundOn?"🔊":"🔇"; b.setAttribute("aria-label",soundOn?"Mute sound":"Unmute sound"); }
+  }
 
   var canvas = document.getElementById("gameCanvas");
   var ctx = canvas.getContext("2d");
@@ -822,13 +898,13 @@
       if(avatarX<20) avatarX=20; if(avatarX>WORLDW-20) avatarX=WORLDW-20;
       if(avatarZ<MINZ) avatarZ=MINZ; if(avatarZ>MAXZ) avatarZ=MAXZ;
 
-      for(var i=0;i<coins.length;i++){ var c=coins[i]; if(!c.taken && Math.abs(avatarX-c.x)<10 && Math.abs(avatarZ-c.z)<10){ c.taken=true; count++; document.getElementById("count").textContent=count; for(var p2=0;p2<5;p2++) sparks.push({x:c.x+(Math.random()*8-4),z:c.z,h:12+Math.random()*10,life:0.5}); } }
-      for(var s=1;s<stations.length;s++){ var st=stations[s]; if(!st.shown && Math.abs(avatarX-st.x)<14 && Math.abs(avatarZ-st.z)<12){ st.shown=true; markDot(s); updateHud(); openDialogue(st); } }
+      for(var i=0;i<coins.length;i++){ var c=coins[i]; if(!c.taken && Math.abs(avatarX-c.x)<10 && Math.abs(avatarZ-c.z)<10){ c.taken=true; count++; sfx("coin"); document.getElementById("count").textContent=count; for(var p2=0;p2<5;p2++) sparks.push({x:c.x+(Math.random()*8-4),z:c.z,h:12+Math.random()*10,life:0.5}); } }
+      for(var s=1;s<stations.length;s++){ var st=stations[s]; if(!st.shown && Math.abs(avatarX-st.x)<14 && Math.abs(avatarZ-st.z)<12){ st.shown=true; markDot(s); updateHud(); sfx("note"); openDialogue(st); } }
 
       var nearKai = Math.abs(avatarX-KAIX)<17 && Math.abs(avatarZ-KAIZ)<13;
       if(nearKai){
         if(notesFound()>=NOTES){ doWin(); }
-        else if(!kaiTeased){ kaiTeased=true; openDialogue(tease); }
+        else if(!kaiTeased){ kaiTeased=true; sfx("tease"); openDialogue(tease); }
       } else if(Math.abs(avatarX-KAIX)>50 || Math.abs(avatarZ-KAIZ)>40){ kaiTeased=false; }
 
       camX += (avatarX-camX)*Math.min(1,dt*5);
@@ -849,12 +925,12 @@
         var ct = cutT-cutAnchor;
         if(ct>0.6 && bouquetOwner===null){ bouquetOwner="kai"; }
         if(ct>2.1 && bouquetOwner==="kai"){
-          bouquetOwner="her";
+          bouquetOwner="her"; sfx("bouquet");
           for(var sp2=0;sp2<6;sp2++) sparks.push({x:avatarX+(Math.random()*8-4),z:avatarZ,h:14+Math.random()*8,life:0.6});
         }
         kissActive = (ct>3.0 && ct<4.8);
         if(ct>3.0 && !kissStarted){
-          kissStarted=true;
+          kissStarted=true; sfx("kiss");
           var midX=(avatarX+KAIX)/2;
           for(var hb=0;hb<9;hb++) winHearts.push({x:midX+(Math.random()*20-10), z:KAIZ, h:26+Math.random()*10, vy:8+Math.random()*9, life:2.2});
           for(var sp3=0;sp3<5;sp3++) sparks.push({x:midX+(Math.random()*6-3),z:KAIZ-1,h:24+Math.random()*6,life:0.5});
@@ -893,7 +969,7 @@
   }
   function openDialogue(s){ paused=true; drawPortrait(); document.getElementById("dlgTitle").textContent=s.title; document.getElementById("dlgText").textContent=s.text; dlg.classList.remove("hidden"); }
   function closeDialogue(){ dlg.classList.add("hidden"); paused=false; }
-  document.getElementById("dlgContinue").addEventListener("click", closeDialogue);
+  document.getElementById("dlgContinue").addEventListener("click", function(){ sfx("click"); closeDialogue(); });
 
   /* -------- Progress dots -------- */
   function buildDots(){
@@ -918,6 +994,7 @@
     document.getElementById("frame").classList.add("cine");
   }
   document.getElementById("playAgain").addEventListener("click", function(){
+    sfx("click");
     document.getElementById("win").classList.add("hidden");
     for(var i=0;i<coins.length;i++) coins[i].taken=false;
     for(var s=1;s<stations.length;s++){ stations[s].shown=false; var d=document.getElementById("dot"+s); if(d) d.classList.remove("on"); }
@@ -978,14 +1055,16 @@
   }
   var titleLoop = function(){ if(titleVisible){ drawTitleHero(); } requestAnimationFrame(titleLoop); };
   document.getElementById("startGame").addEventListener("click", function(){
+    initAudio(); sfx("click");
     document.getElementById("title").classList.add("hidden");
     document.getElementById("customize").classList.remove("hidden");
     titleVisible = false;
   });
+  document.getElementById("soundBtn").addEventListener("click", function(){ if(!ac) initAudio(); toggleSound(); });
 
   function group(title){ var d=document.createElement("div"); d.className="cgroup"; var h=document.createElement("div"); h.className="clabel"; h.textContent=title; var row=document.createElement("div"); row.className="crow"; d.appendChild(h); d.appendChild(row); controls.appendChild(d); return row; }
-  function swatch(row,color,active,onpick){ var b=document.createElement("button"); b.type="button"; b.className="swatch"+(active?" active":""); b.style.background=color; b.addEventListener("click",function(){ for(var i=0;i<row.children.length;i++) row.children[i].classList.remove("active"); b.classList.add("active"); onpick(); }); row.appendChild(b); }
-  function pill(row,label,active,onpick){ var b=document.createElement("button"); b.type="button"; b.className="tbtn2"+(active?" active":""); b.textContent=label; b.addEventListener("click",function(){ for(var i=0;i<row.children.length;i++) row.children[i].classList.remove("active"); b.classList.add("active"); onpick(); }); row.appendChild(b); }
+  function swatch(row,color,active,onpick){ var b=document.createElement("button"); b.type="button"; b.className="swatch"+(active?" active":""); b.style.background=color; b.addEventListener("click",function(){ sfx("tick"); for(var i=0;i<row.children.length;i++) row.children[i].classList.remove("active"); b.classList.add("active"); onpick(); }); row.appendChild(b); }
+  function pill(row,label,active,onpick){ var b=document.createElement("button"); b.type="button"; b.className="tbtn2"+(active?" active":""); b.textContent=label; b.addEventListener("click",function(){ sfx("tick"); for(var i=0;i<row.children.length;i++) row.children[i].classList.remove("active"); b.classList.add("active"); onpick(); }); row.appendChild(b); }
 
   (function buildUI(){
     var r1=group("Skin"); skins.forEach(function(s,i){ swatch(r1,s[0], i===0, function(){ avatar.skin=s[0]; avatar.skinSh=s[1]; }); });
@@ -1007,7 +1086,7 @@
     updateHud();
     if(!skipIntro){ openDialogue(stations[0]); }
   }
-  document.getElementById("startWalk").addEventListener("click", function(){ startPlay(false); });
+  document.getElementById("startWalk").addEventListener("click", function(){ sfx("click"); startPlay(false); });
 
   /* -------- Input -------- */
   var keyL=false, keyR=false, keyU=false, keyD=false;
@@ -1051,6 +1130,7 @@
   window.__G = {
     start:function(){ startPlay(false); }, step:function(dt){ update(dt); render(); },
     titleDraw:function(){ drawTitleHero(); }, pressStart:function(){ document.getElementById("startGame").click(); },
+    audio:function(){ return { ctx: ac?ac.state:null, soundOn:soundOn, musicStarted:musicStarted }; }, sfxTest:function(n){ sfx(n); },
     setDir:function(dx,dz){ testDX=dx; testDZ=dz; }, resume:closeDialogue,
     warp:function(x,z){ avatarX=x; avatarZ=z; camX=x; },
     state:function(){ return { state:state, x:Math.round(avatarX), z:Math.round(avatarZ), count:count, notes:notesFound(), paused:paused, shown:stations.map(function(s){return s.shown;}), dlgTitle:document.getElementById("dlgTitle").textContent, dlgHidden:dlg.classList.contains("hidden"), winHidden:document.getElementById("win").classList.contains("hidden"), cut:{arrived:cutArrived, owner:bouquetOwner, kissed:kissStarted, kissing:kissActive, cine:document.getElementById("frame").classList.contains("cine")} }; }
